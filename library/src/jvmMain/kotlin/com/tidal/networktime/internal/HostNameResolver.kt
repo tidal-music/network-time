@@ -1,7 +1,7 @@
 package com.tidal.networktime.internal
 
 import com.tidal.networktime.ProtocolFamily
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import java.net.Inet4Address
 import java.net.Inet6Address
 import java.net.InetAddress
@@ -14,9 +14,9 @@ internal actual class HostNameResolver {
     timeout: Duration,
     includeINET: Boolean,
     includeINET6: Boolean,
-  ): Iterable<Pair<String, ProtocolFamily>> = withTimeoutOrNull(timeout) {
+  ): Iterable<Pair<String, ProtocolFamily>> = withTimeout(timeout) {
     InetAddress.getAllByName(hostName)
-  }?.mapNotNull {
+  }.mapNotNull {
     val protocolFamily = when (it) {
       is Inet4Address -> ProtocolFamily.INET
       is Inet6Address -> ProtocolFamily.INET6
@@ -28,5 +28,5 @@ internal actual class HostNameResolver {
 
       else -> null
     }
-  } ?: emptySet()
+  }
 }

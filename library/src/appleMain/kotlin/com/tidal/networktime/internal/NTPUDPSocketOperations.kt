@@ -17,6 +17,7 @@ import kotlinx.cinterop.toLong
 import kotlinx.cinterop.value
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import platform.CoreFoundation.CFDataCreate
 import platform.CoreFoundation.CFDataGetBytes
 import platform.CoreFoundation.CFDataGetLength
@@ -139,7 +140,7 @@ internal actual class NTPUDPSocketOperations {
     )
     withTimeout(readTimeout) {
       while (!userDataRef!!.get().exchangeCompleted) {
-        delay(1.seconds)
+        yield()
       }
     }
   }

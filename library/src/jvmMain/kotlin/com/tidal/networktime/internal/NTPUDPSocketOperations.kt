@@ -1,8 +1,6 @@
 package com.tidal.networktime.internal
 
 import com.tidal.networktime.ProtocolFamily
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -24,13 +22,12 @@ internal actual class NTPUDPSocketOperations {
     datagramSocket.connect(InetAddress.getByName(address), portNumber)
   }
 
+  @Suppress("BlockingMethodInNonBlockingContext") // Handled outside
   actual suspend fun exchangeInPlace(buffer: ByteArray, readTimeout: Duration) {
     val exchangePacket = DatagramPacket(buffer, buffer.size)
-    withContext(Dispatchers.IO) {
-      datagramSocket.send(exchangePacket)
-      datagramSocket.soTimeout = readTimeout.toInt(DurationUnit.MILLISECONDS)
-      datagramSocket.receive(exchangePacket)
-    }
+    datagramSocket.send(exchangePacket)
+    datagramSocket.soTimeout = readTimeout.toInt(DurationUnit.MILLISECONDS)
+    datagramSocket.receive(exchangePacket)
   }
 
   actual fun closeSocket() {

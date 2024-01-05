@@ -150,7 +150,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/../..\"\n./gradlew :samples-shared:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "cd \"$SRCROOT/../../..\"\n./gradlew :samples-multiplatform-kotlin-shared:embedAndSignAppleFrameworkForXcode\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -311,7 +311,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
-					samples_shared,
+					samples_multiplatform_kotlin_shared,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.tidal.networktime.sample.iOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -346,7 +346,7 @@
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-framework",
-					samples_shared,
+					samples_multiplatform_kotlin_shared,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.tidal.networktime.sample.iOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -10,7 +10,7 @@ internal class SyncEnable(
   private val mutableState: MutableState,
   private val synchronizationResultProcessor: SynchronizationResultProcessor,
   private val coroutineScope: CoroutineScope,
-  private val syncDispatcher: CoroutineDispatcher,
+  private val toggleDispatcher: CoroutineDispatcher,
   private val syncInterval: Duration,
   private val ntpServers: Iterable<NTPServer>,
   private val referenceClock: KotlinXDateTimeSystemClock,
@@ -20,7 +20,7 @@ internal class SyncEnable(
     if (job != null && !job.isCancelled) {
       return
     }
-    this.job = coroutineScope.launch(syncDispatcher) {
+    this.job = coroutineScope.launch(toggleDispatcher) {
       SyncPeriodic(ntpServers, syncInterval, referenceClock, synchronizationResultProcessor)()
     }
   }

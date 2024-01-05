@@ -24,7 +24,6 @@ internal class SNTPClientImpl(
       mutableState,
       synchronizationResultProcessor,
       coroutineScope,
-      Dispatchers.IO,
       syncInterval,
       ntpServers.asIterable(),
       referenceClock,

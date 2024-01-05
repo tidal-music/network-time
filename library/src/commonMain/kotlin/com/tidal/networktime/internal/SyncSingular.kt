@@ -3,6 +3,7 @@ package com.tidal.networktime.internal
 import com.tidal.networktime.NTPServer
 import com.tidal.networktime.NTPVersion
 import com.tidal.networktime.ProtocolFamily
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
@@ -14,11 +15,12 @@ internal class SyncSingular(
   private val ntpExchanger: NTPExchanger,
   private val referenceClock: KotlinXDateTimeSystemClock,
   private val synchronizationResultProcessor: SynchronizationResultProcessor,
+  private val syncDispatcher: CoroutineDispatcher = Dispatchers.IO,
   private val hostNameResolver: HostNameResolver = HostNameResolver(),
 ) {
   suspend operator fun invoke() {
     val selectedResult = ntpServers.map {
-      withContext(Dispatchers.IO) {
+      withContext(syncDispatcher) {
         async { pickNTPPacketWithShortestRoundTrip(it) }
       }
     }.flatMap {

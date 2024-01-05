@@ -3,6 +3,7 @@ package com.tidal.networktime.internal
 import com.tidal.networktime.NTPServer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlin.time.Duration
@@ -13,19 +14,18 @@ constructor(
   private val mutableState: MutableState,
   private val synchronizationResultProcessor: SynchronizationResultProcessor,
   private val coroutineScope: CoroutineScope,
-  globalDispatcher: CoroutineDispatcher,
   private val syncInterval: Duration,
   private val ntpServers: Iterable<NTPServer>,
   private val referenceClock: KotlinXDateTimeSystemClock,
+  globalDispatcher: CoroutineDispatcher = Dispatchers.Default,
   private val toggleDispatcher: CoroutineDispatcher = globalDispatcher.limitedParallelism(1),
-  private val syncDispatcher: CoroutineDispatcher = globalDispatcher,
 ) {
   fun dispatchStartSync() = dispatch(
     SyncEnable(
       mutableState,
       synchronizationResultProcessor,
       coroutineScope,
-      syncDispatcher,
+      toggleDispatcher,
       syncInterval,
       ntpServers,
       referenceClock,

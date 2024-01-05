@@ -1,7 +1,6 @@
 package com.tidal.networktime.internal
 
 import com.tidal.networktime.ProtocolFamily
-import kotlinx.cinterop.BooleanVar
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.StableRef
@@ -15,22 +14,26 @@ import kotlinx.cinterop.readValue
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.staticCFunction
 import kotlinx.cinterop.toKString
-import kotlinx.cinterop.value
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import platform.CFNetwork.CFHostCancelInfoResolution
 import platform.CFNetwork.CFHostClientCallBack
 import platform.CFNetwork.CFHostClientContext
 import platform.CFNetwork.CFHostCreateWithName
 import platform.CFNetwork.CFHostGetAddressing
 import platform.CFNetwork.CFHostRef
+import platform.CFNetwork.CFHostScheduleWithRunLoop
 import platform.CFNetwork.CFHostSetClient
 import platform.CFNetwork.CFHostStartInfoResolution
 import platform.CFNetwork.kCFHostAddresses
 import platform.CoreFoundation.CFArrayGetCount
 import platform.CoreFoundation.CFArrayGetValueAtIndex
+import platform.CoreFoundation.CFRunLoopGetCurrent
+import platform.CoreFoundation.CFRunLoopGetMain
 import platform.CoreFoundation.CFStringRef
 import platform.CoreFoundation.CFTypeRef
 import platform.CoreFoundation.kCFAllocatorDefault
+import platform.CoreFoundation.kCFRunLoopCommonModes
 import platform.Foundation.CFBridgingRelease
 import platform.Foundation.CFBridgingRetain
 import platform.Foundation.NSString
@@ -41,6 +44,9 @@ import platform.posix.AF_INET6
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
 import platform.posix.sockaddr_in6
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 import kotlin.time.Duration
 
 @OptIn(ExperimentalForeignApi::class)
@@ -71,23 +77,20 @@ internal actual class HostNameResolver {
     return ret ?: emptySet()
   }
 
-  private fun invokeInternal(
+  private suspend fun invokeInternal(
     hostName: String,
     includeINET: Boolean,
     includeINET6: Boolean,
   ): Iterable<Pair<String, ProtocolFamily>> {
     val callback: CFHostClientCallBack = staticCFunction { host, _, _, info ->
-      val addresses = memScoped {
-        val hasBeenResolved = alloc<BooleanVar> {
-          value = false
-        }
-        CFHostGetAddressing(host!!, hasBeenResolved.ptr).takeIf { hasBeenResolved.value }
-          ?: return@staticCFunction
-      }
       val userData = info!!.asStableRef<UserData>().get()
-      val addressCount = CFArrayGetCount(addresses)
+      val addresses = CFHostGetAddressing(host, null)
+      val addressCount = if (addresses == null) 0 else CFArrayGetCount(addresses)
+      println("HostNameResolver.invokeInternal -> CFHostClientCallBack. addressCount=$addressCount")
+      println("AF_INET=$AF_INET")
+      println("AF_INET6=$AF_INET6")
       userData.resolvedAddresses = (0 until addressCount).mapNotNull {
-        val it = CFArrayGetValueAtIndex(addresses, it)
+        val address = CFArrayGetValueAtIndex(addresses, it)
           ?.reinterpret<sockaddr>()
           ?.pointed
           ?.takeIf {
@@ -100,43 +103,74 @@ internal actual class HostNameResolver {
             when (sa_family.toInt()) {
               AF_INET -> reinterpret<sockaddr_in>()
               AF_INET6 -> reinterpret<sockaddr_in6>()
-              else -> false
+              else -> null
             }
-          } ?: return@mapNotNull null
-        return@mapNotNull when (it) {
-          is sockaddr_in -> inet_ntoa(it.sin_addr.readValue())!!.toKString() to ProtocolFamily.INET
-
-          is sockaddr_in6 -> {
-            val addressString: String = memScoped {
-              val buffer = allocArray<ByteVar>(it.sin6_len.toInt())
-              inet_ntop(AF_INET6, it.sin6_addr.readValue(), buffer, it.sin6_len.toUInt())
+          }
+        val debugAddress = CFArrayGetValueAtIndex(addresses, it)?.reinterpret<sockaddr>()?.pointed!!
+        println("Index $it")
+        println(
+          "family=${debugAddress.sa_family.toInt()} (uint=${debugAddress.sa_family.toUInt()})"
+        )
+        println(
+          "v4 resolved: ${
+            inet_ntoa(
+              debugAddress.reinterpret<sockaddr_in>()
+                .sin_addr.readValue()
+            )!!.toKString()
+          }"
+        )
+        println(
+          "v6 resolved: ${
+            memScoped {
+              val address = debugAddress.reinterpret<sockaddr_in6>()
+              val buffer = allocArray<ByteVar>(address.sin6_len.toInt())
+              inet_ntop(AF_INET6, address.sin6_addr.readValue(), buffer, address.sin6_len.toUInt())
               buffer.toKString()
             }
-            addressString to ProtocolFamily.INET6
+          }"
+        )
+        return@mapNotNull when (address) {
+          is sockaddr_in ->
+            inet_ntoa(address.sin_addr.readValue())!!.toKString() to ProtocolFamily.INET
+
+          is sockaddr_in6 -> {
+            memScoped {
+              val buffer = allocArray<ByteVar>(address.sin6_len.toInt())
+              inet_ntop(AF_INET6, address.sin6_addr.readValue(), buffer, address.sin6_len.toUInt())
+              buffer.toKString()
+            } to ProtocolFamily.INET6
           }
 
           else -> null
         }
       }
+      userData.continuation.resume(null)
     }
     hostReference = CFBridgingRetain(hostName as NSString)
-    cfHost = CFHostCreateWithName(kCFAllocatorDefault, hostReference!! as CFStringRef)
-    userDataRef = StableRef.create(UserData(includeINET, includeINET6))
-    memScoped {
-      val clientContext = alloc<CFHostClientContext> {
-        version = 0
-        info = userDataRef!!.asCPointer()
-        retain = null
-        release = null
-        copyDescription = null
+    println("Host reference is ${hostName as NSString}")
+    cfHost = CFHostCreateWithName(kCFAllocatorDefault, hostReference as CFStringRef)
+    suspendCoroutine {
+      userDataRef = StableRef.create(UserData(includeINET, includeINET6, it))
+      memScoped {
+        val clientContext = alloc<CFHostClientContext> {
+          version = 0
+          info = userDataRef!!.asCPointer()
+          retain = null
+          release = null
+          copyDescription = null
+        }
+        CFHostSetClient(cfHost, callback, clientContext.ptr)
+        // Why does CFRunLoopGetCurrent not work?
+        CFHostScheduleWithRunLoop(cfHost, CFRunLoopGetMain(), kCFRunLoopCommonModes)
       }
-      CFHostSetClient(cfHost, callback, clientContext.ptr)
       CFHostStartInfoResolution(cfHost, kCFHostAddresses, null)
     }
-    return userDataRef?.get()?.resolvedAddresses ?: emptySet()
+    println("HostNameResolver.invokeInternal about to return")
+    return userDataRef!!.get().resolvedAddresses
   }
 
   private fun clear() {
+    println("HostNameResolver.clear")
     cfHost = null
     hostReference?.let { CFBridgingRelease(it) }
     hostReference = null
@@ -144,7 +178,11 @@ internal actual class HostNameResolver {
     userDataRef = null
   }
 
-  private class UserData(val includeINET: Boolean, val includeINET6: Boolean) {
+  private class UserData(
+    val includeINET: Boolean,
+    val includeINET6: Boolean,
+    val continuation: Continuation<Nothing?>,
+  ) {
     var resolvedAddresses: Iterable<Pair<String, ProtocolFamily>> = emptySet()
   }
 }
